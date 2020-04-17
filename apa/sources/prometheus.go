@@ -66,6 +66,6 @@ func (p *Prometheus) PreciseQuery(query string, start time.Time, end time.Time) 
 		if strings.Index(err.Error(), "exceeded maximum resolution of") < 0 {
 			return
 		}
-		step *= 2
+		step *= step
 	}
 }

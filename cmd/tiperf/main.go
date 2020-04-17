@@ -10,6 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	host string
+	port int
+	verb string
+)
+
 func main() {
 	var cmd = &cobra.Command{
 		Use:   "tiperf",
@@ -17,22 +23,24 @@ func main() {
 	}
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	var host string
-	var port int
 	cmd.PersistentFlags().StringVarP(&host, "host", "H", "127.0.0.1", "Prometheus host")
 	cmd.PersistentFlags().IntVarP(&port, "port", "P", 9090, "Prometheus port")
+	cmd.PersistentFlags().StringVarP(&verb, "verb", "v", "debug", "Ouput level, sould be: debug|normal|compact")
 
-	apa := apa.NewAutoPerfAssistant()
+	registerDetect(cmd)
+	registerWatch(cmd)
+
+	cmd.Execute()
+}
+
+func newAutoPerfAssistant() *apa.AutoPerfAssistant {
+	apa := apa.NewAutoPerfAssistant(verb)
 	err := apa.AddPrometheus(host, port)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
-
-	registerDetect(cmd, apa)
-	registerWatch(cmd, apa)
-
-	cmd.Execute()
+	return apa
 }
 
 func callHandleFunc(f func() error) {
@@ -43,7 +51,7 @@ func callHandleFunc(f func() error) {
 	}
 }
 
-func registerDetect(parent *cobra.Command, apa *apa.AutoPerfAssistant) {
+func registerDetect(parent *cobra.Command) {
 	cmd := &cobra.Command{
 		Use: "detect",
 	}
@@ -53,6 +61,7 @@ func registerDetect(parent *cobra.Command, apa *apa.AutoPerfAssistant) {
 		Short: "detect data is balanced in the cluster",
 		Run: func(cmd *cobra.Command, _ []string) {
 			callHandleFunc(func() error {
+				apa := newAutoPerfAssistant()
 				return apa.DoDectect(apa.DetectUnbalanced)
 			})
 		},
@@ -63,6 +72,7 @@ func registerDetect(parent *cobra.Command, apa *apa.AutoPerfAssistant) {
 		Short: "detect cluster performance trend",
 		Run: func(cmd *cobra.Command, _ []string) {
 			callHandleFunc(func() error {
+				apa := newAutoPerfAssistant()
 				return apa.DoDectect(apa.DetectTrend)
 			})
 		},
@@ -73,6 +83,7 @@ func registerDetect(parent *cobra.Command, apa *apa.AutoPerfAssistant) {
 		Short: "detect cluster performance spike",
 		Run: func(cmd *cobra.Command, _ []string) {
 			callHandleFunc(func() error {
+				apa := newAutoPerfAssistant()
 				return apa.DoDectect(apa.DetectSpike)
 			})
 		},
@@ -83,6 +94,7 @@ func registerDetect(parent *cobra.Command, apa *apa.AutoPerfAssistant) {
 		Short: "detect all info in the cluster",
 		Run: func(cmd *cobra.Command, _ []string) {
 			callHandleFunc(func() error {
+				apa := newAutoPerfAssistant()
 				return apa.DoDectect(apa.DetectAll)
 			})
 		},
@@ -91,6 +103,6 @@ func registerDetect(parent *cobra.Command, apa *apa.AutoPerfAssistant) {
 	parent.AddCommand(cmd)
 }
 
-func registerWatch(rootCmd *cobra.Command, apa *apa.AutoPerfAssistant) {
+func registerWatch(rootCmd *cobra.Command) {
 	// TODO
 }

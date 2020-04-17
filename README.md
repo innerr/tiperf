@@ -1,2 +1,2 @@
 # tiperf
-A tool kit help to find perf issues in TiDB by parsing it's prometheus(and other) metrics
+Auto analyze prometheus metrics (and more) in TiDB, to help perf tuning

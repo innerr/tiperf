@@ -5,18 +5,18 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/common/model"
-
 	"github.com/innerr/tiperf/apa/sources"
 )
 
 type AutoPerfAssistant struct {
 	data map[string]sources.Source
+	con  Console
 }
 
-func NewAutoPerfAssistant() *AutoPerfAssistant {
+func NewAutoPerfAssistant(verbLevel string) *AutoPerfAssistant {
 	return &AutoPerfAssistant{
 		make(map[string]sources.Source),
+		NewConsole(verbLevel),
 	}
 }
 
@@ -35,11 +35,17 @@ func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
 	if err != nil {
 		return
 	}
-	// TODO: getting data could be merge, get a lot data in one time
+
+	periods, err = a.removeMeaninglessPeriods(periods)
+	if err != nil {
+		return
+	}
+
 	var softs []Period
 	for _, period := range periods {
+		step := chooseStep(period.End.Sub(period.Start))
 		var soft []Period
-		soft, err = a.detectSoftPeriods(period)
+		soft, err = a.detectSoftPeriods(period, step)
 		if err != nil {
 			return
 		}
@@ -61,51 +67,80 @@ func (a *AutoPerfAssistant) detectHardPeriods() (periods []Period, err error) {
 
 	periods = make([]Period, 0)
 	hards := getPeriodHardBreakingSource()
+	end := time.Now()
 
-	var points []model.Time
+	var points []BreakingPoint
 
 	for duration <= maxDuration {
 		var vectors []CollectedSourceTasks
-		vectors, err = collectSources(a.data, hards, time.Now().Add(-duration), time.Now())
+		vectors, err = collectSources(a.data, hards, end.Add(-duration), end, 0)
 		if err != nil {
 			return
 		}
 		for _, vector := range vectors {
-			p, r := findBreakingPoints(vector.Pairs, getBreakingFunc(vector.Source.Function))
+			p := findBreakingPoints(vector)
 			if len(p) > 0 {
 				points = append(points, p...)
-				// TODO: track the reasons
-				_ = r
-				//for _, x := range r {
-				//	t := Period{ms2Time(int64(x.Prev.Timestamp)), ms2Time(int64(x.Next.Timestamp))}
-				//	fmt.Printf("%v\n    %s\n    %v => %v\n", vector.Metric, t.String(), x.Prev.Value, x.Next.Value)
-				//}
 			}
 		}
 		if len(points) > 0 {
 			break
 		} else {
-			duration *= 2
+			duration = duration * 3 / 2
 		}
 	}
 
+	start := end.Add(-duration)
 	if len(points) == 0 {
-		periods = []Period{
-			Period{
-				time.Now().Add(-duration),
-				time.Now(),
-			},
-		}
+		periods = []Period{Period{start, end, newBreakingPoint(start), newBreakingPoint(end)}}
 	} else {
-		points = append(points, model.Time(time.Now().UnixNano()/1e6))
-		periods = genPeriods(time.Now().Add(-duration), points, time.Minute)
+		periods = genPeriods(start, end, points, time.Minute)
 	}
 	return
 }
 
-func (a *AutoPerfAssistant) detectSoftPeriods(period Period) (periods []Period, err error) {
-	//softs := getPeriodSoftBreakingPointSource()
-	//vectors, err = collectSources(a.data, softs, period.Start, period.End)
+func (a *AutoPerfAssistant) removeMeaninglessPeriods(origin []Period) (periods []Period, err error) {
+	if len(origin) > 1 {
+		origin = origin[1:]
+	}
+	periods = origin
+	return
+}
+
+func (a *AutoPerfAssistant) detectSoftPeriods(period Period, step time.Duration) (periods []Period, err error) {
+	if period.End.Sub(period.Start) < time.Minute {
+		return
+	}
+
+	softs := getPeriodSoftBreakingPointSource()
+	vectors, err := collectSources(a.data, softs, period.Start, period.End, step)
+	if err != nil {
+		return
+	}
+
+	vectors = alignVectorsLength(vectors)
+	vecs, times := rotateToPeriodVecs(vectors)
+
+	points := []time.Time{period.Start}
+	reasons := []interface{}{period.StartReason}
+	for i := 1; i < len(vecs); i++ {
+		similarity := cosineSimilarity(vecs[i-1], vecs[i])
+		if similarity < SoftPeriodThreshold {
+			// TODO: use struct
+			reason := fmt.Sprintf("%s vs %s => workload changed: %v", ms2Time(times[i-1]).Format(timeFormat), ms2Time(times[i]).Format(timeFormat), similarity)
+			points = append(points, ms2Time(times[i]))
+			reasons = append(reasons, reason)
+		}
+	}
+	points = append(points, period.End)
+	reasons = append(reasons, period.EndReason)
+
+	if len(points) <= 2 {
+		return
+	}
+	for i := 1; i < len(points); i++ {
+		periods = append(periods, Period{points[i-1], points[i], reasons[i-1], reasons[i]})
+	}
 	return
 }
 
@@ -124,7 +159,6 @@ func (a *AutoPerfAssistant) DoDectect(f func(period Period) error) (err error) {
 }
 
 func (a *AutoPerfAssistant) DetectAll(period Period) (err error) {
-	fmt.Println(period)
 	err = a.DetectUnbalanced(period)
 	if err != nil {
 		return
@@ -137,6 +171,7 @@ func (a *AutoPerfAssistant) DetectAll(period Period) (err error) {
 	if err != nil {
 		return
 	}
+	a.con.Debug(period, "\n")
 	return
 }
 

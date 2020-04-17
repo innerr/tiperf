@@ -14,5 +14,6 @@ type Source interface {
 	Query(query string, start time.Time, end time.Time, step time.Duration) (model.Value, error)
 
 	// A data source must implemented this method
+	//   for a non-prometheus data source, it could consider the 'query' as 'name'
 	PreciseQuery(query string, start time.Time, end time.Time) (model.Value, error)
 }
