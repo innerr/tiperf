@@ -8,7 +8,8 @@ FILES_TO_FMT  := $(shell find . -path -prune -o -name '*.go' -print)
 
 all: format test build
 
-format: vet fmt
+#format: vet fmt
+format: fmt
 
 fmt:
 	@echo "gofmt"
@@ -27,4 +28,4 @@ vet:
 mod:
 	@echo "go mod tidy"
 	GO111MODULE=on go mod tidy
-	@git diff --exit-code -- go.sum go.mod
+	#@git diff --exit-code -- go.sum go.mod

@@ -30,41 +30,56 @@ func (a *AutoPerfAssistant) AddPrometheus(host string, port int) error {
 	return nil
 }
 
-func (a *AutoPerfAssistant) collectSources(sources []SourceConf, start time.Time, end time.Time) (vectors [][]model.SamplePair, err error) {
-	vectors = make([][]model.SamplePair, 0)
-	for _, it := range sources {
-		source, ok := a.data[it.Source]
-		if !ok {
-			err = fmt.Errorf("no data source: " + it.Source)
-			return
-		}
-		var v [][]model.SamplePair
-		v, err = getVectors(source, it.Query, start, end)
+func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
+	periods, err = a.detectHardPeriods()
+	if err != nil {
+		return
+	}
+	// TODO: getting data could be merge, get a lot data in one time
+	var softs []Period
+	for _, period := range periods {
+		var soft []Period
+		soft, err = a.detectSoftPeriods(period)
 		if err != nil {
 			return
 		}
-		vectors = append(vectors, v...)
+		if len(soft) == 0 {
+			softs = append(softs, period)
+		} else {
+			softs = append(softs, soft...)
+		}
 	}
+
+	periods = softs
 	return
 }
 
-func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
-	periods = make([]Period, 0)
-
-	hards := getPeriodHardBreakingPointSource()
+func (a *AutoPerfAssistant) detectHardPeriods() (periods []Period, err error) {
+	// TODO: duration => arg:minDuration
 	duration := time.Hour
+	maxDuration := 30 * 24 * time.Hour
+
+	periods = make([]Period, 0)
+	hards := getPeriodHardBreakingSource()
+
 	var points []model.Time
 
-	for duration <= 30*24*time.Hour {
-		var vectors [][]model.SamplePair
-		vectors, err = a.collectSources(hards, time.Now().Add(-duration), time.Now())
+	for duration <= maxDuration {
+		var vectors []CollectedSourceTasks
+		vectors, err = collectSources(a.data, hards, time.Now().Add(-duration), time.Now())
 		if err != nil {
 			return
 		}
 		for _, vector := range vectors {
-			p := findBreakingPoints(vector, preciseEq)
-			if p != nil && len(p) > 0 {
+			p, r := findBreakingPoints(vector.Pairs, getBreakingFunc(vector.Source.Function))
+			if len(p) > 0 {
 				points = append(points, p...)
+				// TODO: track the reasons
+				_ = r
+				//for _, x := range r {
+				//	t := Period{ms2Time(int64(x.Prev.Timestamp)), ms2Time(int64(x.Next.Timestamp))}
+				//	fmt.Printf("%v\n    %s\n    %v => %v\n", vector.Metric, t.String(), x.Prev.Value, x.Next.Value)
+				//}
 			}
 		}
 		if len(points) > 0 {
@@ -82,8 +97,15 @@ func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
 			},
 		}
 	} else {
+		points = append(points, model.Time(time.Now().UnixNano()/1e6))
 		periods = genPeriods(time.Now().Add(-duration), points, time.Minute)
 	}
+	return
+}
+
+func (a *AutoPerfAssistant) detectSoftPeriods(period Period) (periods []Period, err error) {
+	//softs := getPeriodSoftBreakingPointSource()
+	//vectors, err = collectSources(a.data, softs, period.Start, period.End)
 	return
 }
 
