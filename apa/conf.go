@@ -2,7 +2,15 @@ package apa
 
 // The content in this file should be put into config file
 
-const SoftPeriodThreshold = 0.95
+import (
+	"time"
+)
+
+const (
+	AutoModeMaxDuration     = 30 * 24 * time.Hour
+	AutoModeStartDuration   = time.Hour
+	WorkloadPeriodThreshold = 0.95
+)
 
 type SourceTask struct {
 	Source   string
@@ -10,7 +18,7 @@ type SourceTask struct {
 	Function string
 }
 
-func getPeriodHardBreakingSource() []SourceTask {
+func getPeriodAliveSource() []SourceTask {
 	return []SourceTask{
 		SourceTask{
 			"prometheus",
@@ -20,7 +28,7 @@ func getPeriodHardBreakingSource() []SourceTask {
 	}
 }
 
-func getPeriodSoftBreakingPointSource() []SourceTask {
+func getPeriodWorkloadBreakingPointSource() []SourceTask {
 	return []SourceTask{
 		SourceTask{
 			"prometheus",

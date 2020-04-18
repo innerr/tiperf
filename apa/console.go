@@ -12,12 +12,12 @@ func NewConsole(verbLevel string) Console {
 	switch verbLevel {
 	case "debug":
 		return Console{verbLevelDebug}
-	case "normal":
-		return Console{verbLevelNormal}
+	case "detail":
+		return Console{verbLevelDetail}
 	case "compact":
 		return Console{verbLevelCompact}
 	}
-	panic("unknown verb level: '" + verbLevel + "', should be: debug, normal, compact")
+	panic("unknown verb level: '" + verbLevel + "', should be: debug, detail, compact")
 }
 
 func (c Console) Debug(msg ...interface{}) {
@@ -27,8 +27,8 @@ func (c Console) Debug(msg ...interface{}) {
 	fmt.Print(msg...)
 }
 
-func (c Console) Normal(msg ...interface{}) {
-	if c.verbLevel > verbLevelNormal {
+func (c Console) Detail(msg ...interface{}) {
+	if c.verbLevel > verbLevelDetail {
 		return
 	}
 	fmt.Print(msg...)
@@ -43,6 +43,6 @@ func (c Console) Compact(msg ...interface{}) {
 
 const (
 	verbLevelDebug   = 0
-	verbLevelNormal  = 1
+	verbLevelDetail  = 1
 	verbLevelCompact = 2
 )

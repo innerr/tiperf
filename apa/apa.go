@@ -2,6 +2,7 @@ package apa
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -11,12 +12,17 @@ import (
 type AutoPerfAssistant struct {
 	data map[string]sources.Source
 	con  Console
+
+	timeRange   TimeRange
+	periodCount int
 }
 
-func NewAutoPerfAssistant(verbLevel string) *AutoPerfAssistant {
+func NewAutoPerfAssistant(verbLevel string, timeRange TimeRange, periodCount int) *AutoPerfAssistant {
 	return &AutoPerfAssistant{
 		make(map[string]sources.Source),
 		NewConsole(verbLevel),
+		timeRange,
+		periodCount,
 	}
 }
 
@@ -31,88 +37,98 @@ func (a *AutoPerfAssistant) AddPrometheus(host string, port int) error {
 }
 
 func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
-	periods, err = a.detectHardPeriods()
-	if err != nil {
-		return
+	autoMode := !a.timeRange.Valid()
+
+	if autoMode {
+		a.con.Debug("## args: auto dectect time range to analyze\n")
+	} else {
+		a.con.Debug("## args: analyze range ", a.timeRange, "\n")
+	}
+	if a.periodCount != 0 {
+		a.con.Debug("## args: analyze last ", a.periodCount, " period(s)\n")
 	}
 
-	periods, err = a.removeMeaninglessPeriods(periods)
-	if err != nil {
-		return
+	now := time.Now()
+
+	end := a.timeRange.To
+	start := a.timeRange.From
+	if autoMode {
+		end = now
+		start = end.Add(-AutoModeMaxDuration)
 	}
 
-	var softs []Period
-	for _, period := range periods {
-		step := chooseStep(period.End.Sub(period.Start))
-		var soft []Period
-		soft, err = a.detectSoftPeriods(period, step)
+	duration := end.Sub(start)
+	step := chooseStep(duration)
+	period := Period{start, end, "analyze start time", "analyze end time"}
+
+	for {
+		periods, err = a.detectWorkloadPeriods(period, step)
 		if err != nil {
 			return
 		}
-		if len(soft) == 0 {
-			softs = append(softs, period)
-		} else {
-			softs = append(softs, soft...)
+		if len(periods) != 0 {
+			break
 		}
-	}
-
-	periods = softs
-	return
-}
-
-func (a *AutoPerfAssistant) detectHardPeriods() (periods []Period, err error) {
-	// TODO: duration => arg:minDuration
-	duration := time.Hour
-	maxDuration := 30 * 24 * time.Hour
-
-	periods = make([]Period, 0)
-	hards := getPeriodHardBreakingSource()
-	end := time.Now()
-
-	var points []BreakingPoint
-
-	for duration <= maxDuration {
-		var vectors []CollectedSourceTasks
-		vectors, err = collectSources(a.data, hards, end.Add(-duration), end, 0)
-		if err != nil {
-			return
-		}
-		for _, vector := range vectors {
-			p := findBreakingPoints(vector)
-			if len(p) > 0 {
-				points = append(points, p...)
-			}
-		}
-		if len(points) > 0 {
+		// Increase duration no matter auto or not
+		if duration > AutoModeMaxDuration {
+			a.con.Debug("## detected nothing in max duration\n")
 			break
 		} else {
+			a.con.Debug("## detected nothing, increasing duration: ", duration, " => ")
 			duration = duration * 3 / 2
+			a.con.Debug(duration, "\n")
 		}
 	}
 
-	start := end.Add(-duration)
-	if len(points) == 0 {
-		periods = []Period{Period{start, end, newBreakingPoint(start), newBreakingPoint(end)}}
-	} else {
-		periods = genPeriods(start, end, points, time.Minute)
+	a.con.Debug("## dectected ", len(periods), " periods by workload\n")
+
+	periods, err = a.removePeriods(periods)
+	if err != nil {
+		return
 	}
 	return
 }
 
-func (a *AutoPerfAssistant) removeMeaninglessPeriods(origin []Period) (periods []Period, err error) {
-	if len(origin) > 1 {
+func (a *AutoPerfAssistant) DetectAlive(period Period) (err error) {
+	sources := getPeriodAliveSource()
+	vectors, err := collectSources(a.data, sources, period.Start, period.End, 0)
+	if err != nil {
+		return
+	}
+	var points BreakingPoints
+	for _, vector := range vectors {
+		p := findBreakingPoints(vector)
+		if len(p) > 0 {
+			points = append(points, p...)
+		}
+	}
+	sort.Sort(points)
+	for _, point := range points {
+		a.con.Debug("    ## service event: ", point, "\n")
+	}
+	return
+}
+
+func (a *AutoPerfAssistant) removePeriods(origin []Period) (periods []Period, err error) {
+	if a.periodCount > 0 && len(origin) > a.periodCount {
+		a.con.Debug("## too many periods, removing: ", len(origin), " => ")
+		origin = origin[len(origin)-a.periodCount:]
+		a.con.Debug(len(origin), "\n")
+	}
+	if a.periodCount == 0 && !a.timeRange.Valid() {
+		a.con.Debug("## removing the first period, it's imcompleted\n")
 		origin = origin[1:]
 	}
 	periods = origin
 	return
 }
 
-func (a *AutoPerfAssistant) detectSoftPeriods(period Period, step time.Duration) (periods []Period, err error) {
+func (a *AutoPerfAssistant) detectWorkloadPeriods(period Period, step time.Duration) (periods []Period, err error) {
 	if period.End.Sub(period.Start) < time.Minute {
 		return
 	}
 
-	softs := getPeriodSoftBreakingPointSource()
+	softs := getPeriodWorkloadBreakingPointSource()
 	vectors, err := collectSources(a.data, softs, period.Start, period.End, step)
 	if err != nil {
 		return
@@ -125,9 +141,10 @@ func (a *AutoPerfAssistant) detectSoftPeriods(period Period, step time.Duration)
 	reasons := []interface{}{period.StartReason}
 	for i := 1; i < len(vecs); i++ {
 		similarity := cosineSimilarity(vecs[i-1], vecs[i])
-		if similarity < SoftPeriodThreshold {
+		if similarity < WorkloadPeriodThreshold {
 			// TODO: use struct
-			reason := fmt.Sprintf("%s vs %s => workload changed: %v", ms2Time(times[i-1]).Format(timeFormat), ms2Time(times[i]).Format(timeFormat), similarity)
+			reason := fmt.Sprintf("%s vs %s => workload changed: %v",
+				ms2Time(times[i-1]).Format(timeFormat), ms2Time(times[i]).Format(timeFormat), similarity)
 			points = append(points, ms2Time(times[i]))
 			reasons = append(reasons, reason)
 		}
@@ -150,6 +167,7 @@ func (a *AutoPerfAssistant) DoDectect(f func(period Period) error) (err error) {
 		return
 	}
 	for _, period := range periods {
+		a.con.Detail(period, "\n")
 		err = f(period)
 		if err != nil {
 			return
@@ -159,7 +177,7 @@ func (a *AutoPerfAssistant) DoDectect(f func(period Period) error) (err error) {
 }
 
 func (a *AutoPerfAssistant) DetectAll(period Period) (err error) {
-	err = a.DetectUnbalanced(period)
+	err = a.DetectAlive(period)
 	if err != nil {
 		return
 	}
@@ -171,7 +189,10 @@ func (a *AutoPerfAssistant) DetectAll(period Period) (err error) {
 	if err != nil {
 		return
 	}
-	a.con.Debug(period, "\n")
+	err = a.DetectUnbalanced(period)
+	if err != nil {
+		return
+	}
 	return
 }
 
