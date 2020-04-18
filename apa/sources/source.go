@@ -17,3 +17,5 @@ type Source interface {
 	//   for a non-prometheus data source, it could consider the 'query' as 'name'
 	PreciseQuery(query string, start time.Time, end time.Time) (model.Value, error)
 }
+
+type Sources map[string]Source

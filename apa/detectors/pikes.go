@@ -6,6 +6,6 @@ import (
 )
 
 // TODO: impl
-func DetectPikes(data map[string]sources.Source, period base.Period) (Events, error) {
+func DetectPikes(data sources.Sources, period base.Period, found FoundEvents) (Events, error) {
 	return nil, nil
 }

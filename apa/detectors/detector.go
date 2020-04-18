@@ -30,4 +30,6 @@ func (e Events) Less(i, j int) bool {
 	return e[i].When.Before(e[j].When)
 }
 
-type Detector func(sources map[string]sources.Source, period base.Period) (Events, error)
+type FoundEvents map[string]Events
+
+type Detector func(sources sources.Sources, period base.Period, found FoundEvents) (Events, error)

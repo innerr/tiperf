@@ -35,7 +35,7 @@ type CollectedSourceTasks struct {
 }
 
 func CollectSources(
-	data map[string]sources.Source,
+	data sources.Sources,
 	sources []SourceTask,
 	start time.Time,
 	end time.Time,

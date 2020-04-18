@@ -11,7 +11,7 @@ import (
 )
 
 type AutoPerfAssistant struct {
-	data map[string]sources.Source
+	data sources.Sources
 	con  base.Console
 
 	timeRange   base.TimeRange
@@ -20,7 +20,7 @@ type AutoPerfAssistant struct {
 
 func NewAutoPerfAssistant(verbLevel string, timeRange base.TimeRange, periodCount int) *AutoPerfAssistant {
 	return &AutoPerfAssistant{
-		make(map[string]sources.Source),
+		make(sources.Sources),
 		base.NewConsole(verbLevel),
 		timeRange,
 		periodCount,

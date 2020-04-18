@@ -6,6 +6,6 @@ import (
 )
 
 // TODO: impl
-func DetectBalance(data map[string]sources.Source, period base.Period) (Events, error) {
+func DetectBalance(data sources.Sources, period base.Period, found FoundEvents) (Events, error) {
 	return nil, nil
 }

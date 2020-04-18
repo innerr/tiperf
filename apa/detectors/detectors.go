@@ -14,8 +14,8 @@ type Detectors struct {
 	combinedNames []string
 	combinedHelps []string
 	combineds     map[string][]string
-	functions     map[string]Detector
-	workload      map[string]Detector
+	functions     map[string]DetectorFunc
+	workload      map[string]DetectorFunc
 }
 
 func NewDetectors() Detectors {
@@ -25,17 +25,17 @@ func NewDetectors() Detectors {
 		make([]string, 0),
 		make([]string, 0),
 		make(map[string][]string),
-		make(map[string]Detector),
-		make(map[string]Detector),
+		make(map[string]DetectorFunc),
+		make(map[string]DetectorFunc),
 	}
 	d.RegisterAll()
 	return d
 }
 
-func (d *Detectors) Register(name string, help string, function Detector) {
+func (d *Detectors) Register(name string, help string, function Detector, zIndex int) {
 	d.names = append(d.names, name)
 	d.helps = append(d.helps, help)
-	d.functions[name] = function
+	d.functions[name] = DetectorFunc{name, zIndex, function}
 }
 
 func (d *Detectors) RegisterCombined(name string, help string, names []string) {
@@ -45,10 +45,10 @@ func (d *Detectors) RegisterCombined(name string, help string, names []string) {
 }
 
 func (d *Detectors) RegisterAll() {
-	d.Register("balance", "detect anything imbalance", DetectBalance)
-	d.Register("trend", "detect performance trend", DetectTrend)
-	d.Register("pikes", "detect performance pikes", DetectPikes)
-	d.Register("alive", "detect service up and down events", DetectAlive)
+	d.Register("trend", "detect performance trend", DetectTrend, 0)
+	d.Register("balance", "detect anything imbalance", DetectBalance, 1)
+	d.Register("pikes", "detect performance pikes", DetectPikes, 10)
+	d.Register("alive", "detect service up and down events", DetectAlive, 11)
 
 	d.RegisterCombined("all", "detect all", []string{
 		"balance",
@@ -90,7 +90,14 @@ func (d *Detectors) ParseWorkloadFromArgs(args []string) error {
 
 		if arg[0] == '~' {
 			name := arg[1:]
-			delete(d.workload, name)
+			names, ok := d.combineds[name]
+			if ok {
+				for _, it := range names {
+					delete(d.workload, it)
+				}
+			} else {
+				delete(d.workload, name)
+			}
 			continue
 		}
 
@@ -123,16 +130,48 @@ func (d *Detectors) GetWorkload() (workload []string) {
 	return
 }
 
-// TODO: keep the register order
-func (d *Detectors) RunWorkload(sources map[string]sources.Source, period base.Period) (events Events, err error) {
-	var ev Events
-	for _, function := range d.workload {
-		ev, err = function(sources, period)
+func (d *Detectors) RunWorkload(sources sources.Sources, period base.Period) (events Events, err error) {
+	funcs := make(DetectorFuncs, len(d.workload))
+	i := 0
+	for _, v := range d.workload {
+		funcs[i] = v
+		i++
+	}
+	sort.Sort(funcs)
+
+	found := FoundEvents{}
+	var es Events
+	for _, function := range funcs {
+		es, err = function.Func(sources, period, found)
 		if err != nil {
 			return
 		}
-		events = append(events, ev...)
+		sort.Sort(es)
+		found[function.Name] = es
+		events = append(events, es...)
 	}
 	sort.Sort(events)
 	return
+}
+
+// It's easier using z-index than using DAG to solve dependency,
+//   since all detectors are statically configured
+type DetectorFunc struct {
+	Name   string
+	ZIndex int
+	Func   Detector
+}
+
+type DetectorFuncs []DetectorFunc
+
+func (d DetectorFuncs) Len() int {
+	return len(d)
+}
+
+func (d DetectorFuncs) Swap(i, j int) {
+	d[i], d[j] = d[j], d[i]
+}
+
+func (d DetectorFuncs) Less(i, j int) bool {
+	return d[i].ZIndex < d[j].ZIndex
 }
