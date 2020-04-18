@@ -60,7 +60,12 @@ func (a *AutoPerfAssistant) DetectPeriods() (periods []base.Period, err error) {
 	duration := end.Sub(start)
 
 	for {
-		period := base.Period{start, end, "analyze start time", "analyze end time"}
+		period := base.Period{
+			start,
+			end,
+			"start",
+			"end",
+		}
 		step := base.ChooseStep(duration)
 		periods, err = a.detectWorkloadPeriods(period, step)
 		if err != nil {
@@ -124,20 +129,33 @@ func (a *AutoPerfAssistant) detectWorkloadPeriods(period base.Period, step time.
 		return
 	}
 	vecs, times := base.RotateToPeriodVecs(vectors)
+	similarities := []float64{0}
+	for i := 1; i < len(vecs); i++ {
+		similarity := base.CosineSimilarity(vecs[i-1], vecs[i])
+		similarities = append(similarities, similarity)
+	}
 
+	// TODO: Could be improved here, theoretically it may fall into a locally optimal point. but it's good enough by test
+	// TODO: When step is too big, do more detecting with smaller step
 	points := []time.Time{period.Start}
 	reasons := []interface{}{period.StartReason}
 	prevTime := times[0]
 	for i := 1; i < len(vecs); i++ {
-		similarity := base.CosineSimilarity(vecs[i-1], vecs[i])
+		similarity := similarities[i]
 		if similarity < base.WorkloadPeriodThreshold {
-			if (times[i]-prevTime) > 60*1000 || true {
-				// TODO: When step is too big, detect with smaller step
-				// TODO: use struct
-				reason := fmt.Sprintf("%s vs %s => workload changed, comparing-step %v, similarity %v",
-					base.Ms2Time(times[i-1]).Format(base.TimeFormat), base.Ms2Time(times[i]).Format(base.TimeFormat), step, similarity)
-				points = append(points, base.Ms2Time(times[i]))
-				reasons = append(reasons, reason)
+			if i+1 < len(vecs) && similarities[i+1] < similarity {
+				continue
+			}
+			if (times[i] - prevTime) > 60*1000 {
+				prevTime := base.Ms2Time(times[i-1])
+				currTime := base.Ms2Time(times[i])
+				reasons = append(reasons, WorkloadPeriodReason{
+					prevTime,
+					currTime,
+					step,
+					similarity,
+				})
+				points = append(points, currTime)
 			}
 			prevTime = times[i]
 		}
@@ -194,16 +212,40 @@ func (a *AutoPerfAssistant) DoDectect(detector detectors.Detectors) (err error) 
 
 	for _, period := range periods {
 		a.con.Detail("[", period.Start.Format(base.TimeFormat), " => ", period.End.Format(base.TimeFormat), "]", "\n")
-		a.con.Debug("    ## started by: ", period.StartReason, "\n")
+		whyStart := fmt.Sprintf("%v", period.StartReason)
+		if whyStart != "start" {
+			a.con.Detail("    ** started by ", whyStart, "\n")
+		}
 		var events detectors.Events
 		events, err = detector.RunWorkload(a.data, period)
 		if err != nil {
 			return
 		}
 		for _, event := range events {
-			a.con.Debug("    ## ", event.When.Format(base.TimeFormat), " ", event.What, "\n")
+			event.What.Output(event.When, a.con, "    ")
 		}
-		a.con.Debug("    ## ended   by: ", period.EndReason, "\n")
+		whyEnd := fmt.Sprintf("%v", period.EndReason)
+		if whyEnd != "end" {
+			whyEnd = ", ended by " + whyEnd
+		} else {
+			whyEnd = ""
+		}
+		a.con.Detail("    ** lasted ", period.End.Sub(period.Start).Truncate(time.Minute), whyEnd, "\n")
 	}
 	return
+}
+
+type WorkloadPeriodReason struct {
+	PrevStartTime time.Time
+	CurrStartTime time.Time
+	Duration      time.Duration
+	Similarity    float64
+}
+
+func (w WorkloadPeriodReason) String() string {
+	var durDesc string
+	if w.Duration != time.Minute {
+		durDesc = " in " + string(w.Duration.Truncate(time.Minute))
+	}
+	return fmt.Sprintf("workload changed%s, similarity %.2f", durDesc, w.Similarity)
 }

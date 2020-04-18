@@ -35,7 +35,7 @@ func main() {
 	cmd.PersistentFlags().StringVarP(&host, "host", "H", "127.0.0.1", "Prometheus host")
 	cmd.PersistentFlags().IntVarP(&port, "port", "P", 9090, "Prometheus port")
 
-	cmd.PersistentFlags().StringVar(&verb, "verb", "debug", "Ouput level, sould be: debug|detail|compact")
+	cmd.PersistentFlags().StringVar(&verb, "verb", "detail", "Ouput level, sould be: debug|detail|compact")
 
 	cmd.PersistentFlags().StringVarP(&from, "from", "f", "", "Analyze from this time, format: 2006-01-02 15:04:05")
 	cmd.PersistentFlags().StringVarP(&to, "to", "t", "", "Analyze to this time, format: 2006-01-02 15:04:05")

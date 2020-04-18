@@ -7,9 +7,13 @@ import (
 	"github.com/innerr/tiperf/apa/sources"
 )
 
+type EventInfo interface {
+	Output(when time.Time, con base.Console, indent string)
+}
+
 type Event struct {
 	When time.Time
-	What interface{}
+	What EventInfo
 }
 
 type Events []Event

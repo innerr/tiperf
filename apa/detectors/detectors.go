@@ -136,11 +136,3 @@ func (d *Detectors) RunWorkload(sources map[string]sources.Source, period base.P
 	sort.Sort(events)
 	return
 }
-
-func padding(s string, max int) string {
-	count := max - len(s)
-	for i := 0; i < count; i++ {
-		s += " "
-	}
-	return s
-}
