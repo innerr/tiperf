@@ -2,11 +2,11 @@ package apa
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"time"
 
 	"github.com/innerr/tiperf/apa/base"
+	"github.com/innerr/tiperf/apa/detectors"
 	"github.com/innerr/tiperf/apa/sources"
 )
 
@@ -87,7 +87,7 @@ func (a *AutoPerfAssistant) DetectPeriods() (periods []base.Period, err error) {
 				a.con.Debug("## detected ", len(periods), "/", a.periodCount, " period(s)")
 			}
 			a.con.Debug(", increasing duration: ", duration, " => ")
-			duration = duration * 3 / 2
+			duration *= 2
 			start = end.Add(-duration)
 			a.con.Debug(duration, "\n")
 		}
@@ -181,72 +181,29 @@ func (a *AutoPerfAssistant) removePeriods(origin []base.Period) (periods []base.
 	return
 }
 
-func (a *AutoPerfAssistant) DoDectect(f func(period base.Period) error) (err error) {
+func (a *AutoPerfAssistant) DoDectect(detector detectors.Detectors) (err error) {
 	periods, err := a.DetectPeriods()
 	if err != nil {
 		return
 	}
 
+	workload := detector.GetWorkload()
+	for _, w := range workload {
+		a.con.Debug("## args: workload ", w, "\n")
+	}
+
 	for _, period := range periods {
 		a.con.Detail("[", period.Start.Format(base.TimeFormat), " => ", period.End.Format(base.TimeFormat), "]", "\n")
 		a.con.Debug("    ## started by: ", period.StartReason, "\n")
-		err = f(period)
+		var events detectors.Events
+		events, err = detector.RunWorkload(a.data, period)
 		if err != nil {
 			return
 		}
+		for _, event := range events {
+			a.con.Debug("    ## ", event.When.Format(base.TimeFormat), " ", event.What, "\n")
+		}
 		a.con.Debug("    ## ended   by: ", period.EndReason, "\n")
 	}
-	return
-}
-
-func (a *AutoPerfAssistant) DetectAll(period base.Period) (err error) {
-	err = a.DetectAlive(period)
-	if err != nil {
-		return
-	}
-	err = a.DetectUnbalanced(period)
-	if err != nil {
-		return
-	}
-	err = a.DetectUnbalanced(period)
-	if err != nil {
-		return
-	}
-	err = a.DetectUnbalanced(period)
-	if err != nil {
-		return
-	}
-	return
-}
-
-func (a *AutoPerfAssistant) DetectAlive(period base.Period) (err error) {
-	sources := base.GetPeriodAliveSource()
-	vectors, err := base.CollectSources(a.data, sources, period.Start, period.End, 0)
-	if err != nil {
-		return
-	}
-	var points base.BreakingPoints
-	for _, vector := range vectors {
-		p := base.FindBreakingPoints(vector)
-		if len(p) > 0 {
-			points = append(points, p...)
-		}
-	}
-	sort.Sort(points)
-	for _, point := range points {
-		a.con.Debug("    ## service event: ", point, "\n")
-	}
-	return
-}
-
-func (a *AutoPerfAssistant) DetectUnbalanced(period base.Period) (err error) {
-	return
-}
-
-func (a *AutoPerfAssistant) DetectTrend(period base.Period) (err error) {
-	return
-}
-
-func (a *AutoPerfAssistant) DetectSpike(period base.Period) (err error) {
 	return
 }

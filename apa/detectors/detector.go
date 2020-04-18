@@ -14,4 +14,16 @@ type Event struct {
 
 type Events []Event
 
-type Detector func(sources map[string]sources.Source, period base.Period) Events
+func (e Events) Len() int {
+	return len(e)
+}
+
+func (e Events) Swap(i, j int) {
+	e[i], e[j] = e[j], e[i]
+}
+
+func (e Events) Less(i, j int) bool {
+	return e[i].When.Before(e[j].When)
+}
+
+type Detector func(sources map[string]sources.Source, period base.Period) (Events, error)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/innerr/tiperf/apa"
 	"github.com/innerr/tiperf/apa/base"
+	"github.com/innerr/tiperf/apa/detectors"
 
 	"github.com/spf13/cobra"
 )
@@ -24,11 +25,12 @@ var (
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	var cmd = &cobra.Command{
 		Use:   "tiperf",
-		Short: "A tool kit help to find perf issues in TiDB by parsing it's prometheus(and other) metrics",
+		Short: "Analyze performance of TiDB by parsing it's prometheus(and other) metrics",
 	}
-	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	cmd.PersistentFlags().StringVarP(&host, "host", "H", "127.0.0.1", "Prometheus host")
 	cmd.PersistentFlags().IntVarP(&port, "port", "P", 9090, "Prometheus port")
@@ -72,52 +74,29 @@ func callHandleFunc(f func() error) {
 
 func registerTimeline(parent *cobra.Command) {
 	cmd := &cobra.Command{
-		Use: "timeline",
+		Use:   "timeline",
+		Short: "Analyze cluster and report in timeline",
+		Args:  cobra.ArbitraryArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			dectectors := detectors.NewDetectors()
+			if len(args) == 0 {
+				fmt.Println("Usage: append 'name' to select features, '~name' to filter features")
+				fmt.Println("Feature list:")
+				help := dectectors.HelpStrings()
+				for _, h := range help {
+					fmt.Println("  " + h)
+				}
+				return
+			}
+			apa := newAutoPerfAssistant()
+			callHandleFunc(func() (err error) {
+				err = dectectors.ParseWorkloadFromArgs(args)
+				if err != nil {
+					return
+				}
+				return apa.DoDectect(dectectors)
+			})
+		},
 	}
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "balance",
-		Short: "detect data is balanced in the cluster",
-		Run: func(cmd *cobra.Command, _ []string) {
-			callHandleFunc(func() error {
-				apa := newAutoPerfAssistant()
-				return apa.DoDectect(apa.DetectUnbalanced)
-			})
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "trend",
-		Short: "detect cluster performance trend",
-		Run: func(cmd *cobra.Command, _ []string) {
-			callHandleFunc(func() error {
-				apa := newAutoPerfAssistant()
-				return apa.DoDectect(apa.DetectTrend)
-			})
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "spike",
-		Short: "detect cluster performance spike",
-		Run: func(cmd *cobra.Command, _ []string) {
-			callHandleFunc(func() error {
-				apa := newAutoPerfAssistant()
-				return apa.DoDectect(apa.DetectSpike)
-			})
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "all",
-		Short: "detect all info in the cluster",
-		Run: func(cmd *cobra.Command, _ []string) {
-			callHandleFunc(func() error {
-				apa := newAutoPerfAssistant()
-				return apa.DoDectect(apa.DetectAll)
-			})
-		},
-	})
-
 	parent.AddCommand(cmd)
 }
