@@ -1,28 +1,15 @@
-package apa
+package base
 
 import (
-	"fmt"
 	"math"
-	"time"
 
 	"github.com/prometheus/common/model"
 )
 
-// TODO: have risk that could be too many data and fail, need to split into many queries
-func chooseStep(duration time.Duration) time.Duration {
-	if duration >= 30*24*time.Hour {
-		return 15 * time.Minute
-	}
-	if duration >= 7*24*time.Hour {
-		return 5 * time.Minute
-	}
-	return time.Minute
-}
-
 // PeriodVec represent a period with a multiply dimension vector
 type PeriodVec []float64
 
-func alignVectorsLength(origin []CollectedSourceTasks) (vectors []CollectedSourceTasks) {
+func AlignVectorsLength(origin []CollectedSourceTasks) (vectors []CollectedSourceTasks) {
 	if len(origin) == 0 {
 		return
 	}
@@ -43,7 +30,7 @@ func alignVectorsLength(origin []CollectedSourceTasks) (vectors []CollectedSourc
 	return vectors
 }
 
-func rotateToPeriodVecs(vectors []CollectedSourceTasks) (vecs []PeriodVec, times []model.Time) {
+func RotateToPeriodVecs(vectors []CollectedSourceTasks) (vecs []PeriodVec, times []model.Time) {
 	if len(vectors) == 0 {
 		return
 	}
@@ -56,7 +43,7 @@ func rotateToPeriodVecs(vectors []CollectedSourceTasks) (vecs []PeriodVec, times
 				t = it.Pairs[i].Timestamp
 			} else {
 				if t != it.Pairs[i].Timestamp {
-					fmt.Println("WW", i, t, it.Pairs[i].Timestamp)
+					panic("timestamps not matched in multiply vectors from one query")
 				}
 			}
 			vec = append(vec, float64(it.Pairs[i].Value))
@@ -67,7 +54,7 @@ func rotateToPeriodVecs(vectors []CollectedSourceTasks) (vecs []PeriodVec, times
 	return
 }
 
-func cosineSimilarity(a PeriodVec, b PeriodVec) float64 {
+func CosineSimilarity(a PeriodVec, b PeriodVec) float64 {
 	var (
 		aLen  = len(a)
 		bLen  = len(b)

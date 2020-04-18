@@ -6,21 +6,22 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/innerr/tiperf/apa/base"
 	"github.com/innerr/tiperf/apa/sources"
 )
 
 type AutoPerfAssistant struct {
 	data map[string]sources.Source
-	con  Console
+	con  base.Console
 
-	timeRange   TimeRange
+	timeRange   base.TimeRange
 	periodCount int
 }
 
-func NewAutoPerfAssistant(verbLevel string, timeRange TimeRange, periodCount int) *AutoPerfAssistant {
+func NewAutoPerfAssistant(verbLevel string, timeRange base.TimeRange, periodCount int) *AutoPerfAssistant {
 	return &AutoPerfAssistant{
 		make(map[string]sources.Source),
-		NewConsole(verbLevel),
+		base.NewConsole(verbLevel),
 		timeRange,
 		periodCount,
 	}
@@ -36,7 +37,7 @@ func (a *AutoPerfAssistant) AddPrometheus(host string, port int) error {
 	return nil
 }
 
-func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
+func (a *AutoPerfAssistant) DetectPeriods() (periods []base.Period, err error) {
 	autoMode := !a.timeRange.Valid()
 
 	if autoMode {
@@ -54,28 +55,40 @@ func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
 	start := a.timeRange.From
 	if autoMode {
 		end = now
-		start = end.Add(-AutoModeMaxDuration)
+		start = end.Add(-base.AutoModeStartDuration)
 	}
-
 	duration := end.Sub(start)
-	step := chooseStep(duration)
-	period := Period{start, end, "analyze start time", "analyze end time"}
 
 	for {
+		period := base.Period{start, end, "analyze start time", "analyze end time"}
+		step := base.ChooseStep(duration)
 		periods, err = a.detectWorkloadPeriods(period, step)
 		if err != nil {
 			return
 		}
-		if len(periods) != 0 {
+		if a.periodCount > 0 && len(periods) > a.periodCount {
+			break
+		}
+		if a.periodCount == 0 && len(periods) != 0 {
 			break
 		}
 		// Increase duration no matter auto or not
-		if duration > AutoModeMaxDuration {
-			a.con.Debug("## detected nothing in max duration\n")
+		if duration > base.AutoModeMaxDuration {
+			if a.periodCount == 0 {
+				a.con.Debug("## detected nothing in max duration\n")
+			} else {
+				a.con.Debug("## detected ", len(periods), "/", a.periodCount, " period(s), reached max duration\n")
+			}
 			break
 		} else {
-			a.con.Debug("## detected nothing, increasing duration: ", duration, " => ")
+			if a.periodCount == 0 {
+				a.con.Debug("## detected nothing")
+			} else {
+				a.con.Debug("## detected ", len(periods), "/", a.periodCount, " period(s)")
+			}
+			a.con.Debug(", increasing duration: ", duration, " => ")
 			duration = duration * 3 / 2
+			start = end.Add(-duration)
 			a.con.Debug(duration, "\n")
 		}
 	}
@@ -89,64 +102,44 @@ func (a *AutoPerfAssistant) DetectPeriods() (periods []Period, err error) {
 	return
 }
 
-func (a *AutoPerfAssistant) DetectAlive(period Period) (err error) {
-	sources := getPeriodAliveSource()
-	vectors, err := collectSources(a.data, sources, period.Start, period.End, 0)
-	if err != nil {
-		return
-	}
-	var points BreakingPoints
-	for _, vector := range vectors {
-		p := findBreakingPoints(vector)
-		if len(p) > 0 {
-			points = append(points, p...)
-		}
-	}
-	sort.Sort(points)
-	for _, point := range points {
-		a.con.Debug("    ## service event: ", point, "\n")
-	}
-	return
-}
-
-func (a *AutoPerfAssistant) removePeriods(origin []Period) (periods []Period, err error) {
-	if a.periodCount > 0 && len(origin) > a.periodCount {
-		a.con.Debug("## too many periods, removing: ", len(origin), " => ")
-		origin = origin[len(origin)-a.periodCount:]
-		a.con.Debug(len(origin), "\n")
-	}
-	if a.periodCount == 0 && !a.timeRange.Valid() {
-		a.con.Debug("## removing the first period, it's imcompleted\n")
-		origin = origin[1:]
-	}
-	periods = origin
-	return
-}
-
-func (a *AutoPerfAssistant) detectWorkloadPeriods(period Period, step time.Duration) (periods []Period, err error) {
+func (a *AutoPerfAssistant) detectWorkloadPeriods(period base.Period, step time.Duration) (periods []base.Period, err error) {
 	if period.End.Sub(period.Start) < time.Minute {
 		return
 	}
 
-	softs := getPeriodWorkloadBreakingPointSource()
-	vectors, err := collectSources(a.data, softs, period.Start, period.End, step)
+	a.con.Debug("## ", period.Start.Format(base.TimeFormat), " => ",
+		period.End.Format(base.TimeFormat), " detecting worload periods\n")
+
+	sources := base.GetPeriodWorkloadBreakingPointSource()
+	vectors, err := base.CollectSources(a.data, sources, period.Start, period.End, step)
 	if err != nil {
 		return
 	}
+	if len(vectors) == 0 {
+		return
+	}
 
-	vectors = alignVectorsLength(vectors)
-	vecs, times := rotateToPeriodVecs(vectors)
+	vectors = base.AlignVectorsLength(vectors)
+	if len(vectors[0].Pairs) == 0 {
+		return
+	}
+	vecs, times := base.RotateToPeriodVecs(vectors)
 
 	points := []time.Time{period.Start}
 	reasons := []interface{}{period.StartReason}
+	prevTime := times[0]
 	for i := 1; i < len(vecs); i++ {
-		similarity := cosineSimilarity(vecs[i-1], vecs[i])
-		if similarity < WorkloadPeriodThreshold {
-			// TODO: use struct
-			reason := fmt.Sprintf("%s vs %s => workload changed: %v",
-				ms2Time(times[i-1]).Format(timeFormat), ms2Time(times[i]).Format(timeFormat), similarity)
-			points = append(points, ms2Time(times[i]))
-			reasons = append(reasons, reason)
+		similarity := base.CosineSimilarity(vecs[i-1], vecs[i])
+		if similarity < base.WorkloadPeriodThreshold {
+			if (times[i]-prevTime) > 60*1000 || true {
+				// TODO: When step is too big, detect with smaller step
+				// TODO: use struct
+				reason := fmt.Sprintf("%s vs %s => workload changed, comparing-step %v, similarity %v",
+					base.Ms2Time(times[i-1]).Format(base.TimeFormat), base.Ms2Time(times[i]).Format(base.TimeFormat), step, similarity)
+				points = append(points, base.Ms2Time(times[i]))
+				reasons = append(reasons, reason)
+			}
+			prevTime = times[i]
 		}
 	}
 	points = append(points, period.End)
@@ -156,27 +149,57 @@ func (a *AutoPerfAssistant) detectWorkloadPeriods(period Period, step time.Durat
 		return
 	}
 	for i := 1; i < len(points); i++ {
-		periods = append(periods, Period{points[i-1], points[i], reasons[i-1], reasons[i]})
+		periods = append(periods, base.Period{points[i-1], points[i], reasons[i-1], reasons[i]})
 	}
 	return
 }
 
-func (a *AutoPerfAssistant) DoDectect(f func(period Period) error) (err error) {
+func (a *AutoPerfAssistant) removePeriods(origin []base.Period) (periods []base.Period, err error) {
+	if a.periodCount > 0 && len(origin) > a.periodCount {
+		a.con.Debug("## too many periods, reducing: ", len(origin), " => ")
+		origin = origin[len(origin)-a.periodCount:]
+		a.con.Debug(len(origin), "\n")
+	} else if !a.timeRange.Valid() {
+		if len(origin) > 1 {
+			a.con.Debug("## removing the first period, it's imcompleted\n")
+			origin = origin[1:]
+		}
+	} else {
+		oldLen := len(origin)
+		for len(origin) > 0 {
+			if a.timeRange.From.After(origin[0].End) {
+				origin = origin[1:]
+			} else {
+				break
+			}
+		}
+		if oldLen != len(origin) {
+			a.con.Debug("## removed ", oldLen-len(origin), " not in analyze range period(s)\n")
+		}
+	}
+	periods = origin
+	return
+}
+
+func (a *AutoPerfAssistant) DoDectect(f func(period base.Period) error) (err error) {
 	periods, err := a.DetectPeriods()
 	if err != nil {
 		return
 	}
+
 	for _, period := range periods {
-		a.con.Detail(period, "\n")
+		a.con.Detail("[", period.Start.Format(base.TimeFormat), " => ", period.End.Format(base.TimeFormat), "]", "\n")
+		a.con.Debug("    ## started by: ", period.StartReason, "\n")
 		err = f(period)
 		if err != nil {
 			return
 		}
+		a.con.Debug("    ## ended   by: ", period.EndReason, "\n")
 	}
 	return
 }
 
-func (a *AutoPerfAssistant) DetectAll(period Period) (err error) {
+func (a *AutoPerfAssistant) DetectAll(period base.Period) (err error) {
 	err = a.DetectAlive(period)
 	if err != nil {
 		return
@@ -196,14 +219,34 @@ func (a *AutoPerfAssistant) DetectAll(period Period) (err error) {
 	return
 }
 
-func (a *AutoPerfAssistant) DetectUnbalanced(period Period) (err error) {
+func (a *AutoPerfAssistant) DetectAlive(period base.Period) (err error) {
+	sources := base.GetPeriodAliveSource()
+	vectors, err := base.CollectSources(a.data, sources, period.Start, period.End, 0)
+	if err != nil {
+		return
+	}
+	var points base.BreakingPoints
+	for _, vector := range vectors {
+		p := base.FindBreakingPoints(vector)
+		if len(p) > 0 {
+			points = append(points, p...)
+		}
+	}
+	sort.Sort(points)
+	for _, point := range points {
+		a.con.Debug("    ## service event: ", point, "\n")
+	}
 	return
 }
 
-func (a *AutoPerfAssistant) DetectTrend(period Period) (err error) {
+func (a *AutoPerfAssistant) DetectUnbalanced(period base.Period) (err error) {
 	return
 }
 
-func (a *AutoPerfAssistant) DetectSpike(period Period) (err error) {
+func (a *AutoPerfAssistant) DetectTrend(period base.Period) (err error) {
+	return
+}
+
+func (a *AutoPerfAssistant) DetectSpike(period base.Period) (err error) {
 	return
 }

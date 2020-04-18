@@ -1,4 +1,4 @@
-package apa
+package base
 
 // The content in this file should be put into config file
 
@@ -10,6 +10,8 @@ const (
 	AutoModeMaxDuration     = 30 * 24 * time.Hour
 	AutoModeStartDuration   = time.Hour
 	WorkloadPeriodThreshold = 0.95
+	TimeFormat              = "2006-01-02 15:04:05"
+	TimeFormatZ             = TimeFormat + " MST"
 )
 
 type SourceTask struct {
@@ -18,7 +20,7 @@ type SourceTask struct {
 	Function string
 }
 
-func getPeriodAliveSource() []SourceTask {
+func GetPeriodAliveSource() []SourceTask {
 	return []SourceTask{
 		SourceTask{
 			"prometheus",
@@ -28,7 +30,7 @@ func getPeriodAliveSource() []SourceTask {
 	}
 }
 
-func getPeriodWorkloadBreakingPointSource() []SourceTask {
+func GetPeriodWorkloadBreakingPointSource() []SourceTask {
 	return []SourceTask{
 		SourceTask{
 			"prometheus",

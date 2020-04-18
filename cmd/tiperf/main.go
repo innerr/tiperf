@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/innerr/tiperf/apa"
+	"github.com/innerr/tiperf/apa/base"
 
 	"github.com/spf13/cobra"
 )
@@ -47,7 +48,7 @@ func main() {
 }
 
 func newAutoPerfAssistant() *apa.AutoPerfAssistant {
-	timeRange, err := apa.NewTimeRangeFromArgs(from, to, duration)
+	timeRange, err := base.NewTimeRangeFromArgs(from, to, duration)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)

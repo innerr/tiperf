@@ -1,4 +1,4 @@
-package apa
+package base
 
 import (
 	"fmt"
@@ -17,18 +17,18 @@ func (t TimeRange) Valid() bool {
 }
 
 func (t TimeRange) String() string {
-	return fmt.Sprintf("[%s => %s]", t.From.Format(timeFormat), t.To.Format(timeFormat))
+	return fmt.Sprintf("%s => %s", t.From.Format(TimeFormat), t.To.Format(TimeFormat))
 }
 
 func NewTimeRangeFromArgs(from string, to string, duration time.Duration) (t TimeRange, err error) {
 	if len(from) != 0 {
-		t.From, err = time.Parse(timeFormatZ, from+" CST")
+		t.From, err = time.Parse(TimeFormatZ, from+" CST")
 		if err != nil {
 			return
 		}
 	}
 	if len(to) != 0 {
-		t.To, err = time.Parse(timeFormatZ, to+" CST")
+		t.To, err = time.Parse(TimeFormatZ, to+" CST")
 		if err != nil {
 			return
 		}
@@ -42,11 +42,15 @@ func NewTimeRangeFromArgs(from string, to string, duration time.Duration) (t Tim
 	if duration == 0 {
 		return
 	}
+
 	now := time.Now()
-	if t.To.IsZero() {
+	if !t.Valid() {
+		t.To = now
+		t.From = t.To.Add(-duration)
+	} else if t.To.IsZero() {
 		if t.From.After(now) {
 			err = fmt.Errorf("the time arg `from` after `now`: %s vs %s",
-				t.From.Format(timeFormatZ), now.Format(timeFormatZ))
+				t.From.Format(TimeFormatZ), now.Format(TimeFormatZ))
 			return
 		}
 		t.To = t.From.Add(duration)
@@ -62,27 +66,10 @@ func NewTimeRangeFromArgs(from string, to string, duration time.Duration) (t Tim
 	return
 }
 
-type Period struct {
-	Start       time.Time
-	End         time.Time
-	StartReason interface{}
-	EndReason   interface{}
-}
-
-func (p Period) String() string {
-	return fmt.Sprintf("[%s => %s]\n    started by: %v\n    ended   by: %v",
-		p.Start.Format(timeFormat), p.End.Format(timeFormat), p.StartReason, p.EndReason)
-}
-
-func ms2Time(ms model.Time) time.Time {
+func Ms2Time(ms model.Time) time.Time {
 	return time.Unix(0, int64(1e6*ms))
 }
 
-func time2ms(t time.Time) model.Time {
+func Time2Ms(t time.Time) model.Time {
 	return model.Time(t.UnixNano() / 1e6)
 }
-
-const (
-	timeFormat  = "2006-01-02 15:04:05"
-	timeFormatZ = timeFormat + " MST"
-)
