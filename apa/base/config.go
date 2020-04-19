@@ -9,9 +9,10 @@ import (
 const (
 	AutoModeMaxDuration     = 30 * 24 * time.Hour
 	AutoModeStartDuration   = time.Hour
-	WorkloadPeriodThreshold = 0.5
+	WorkloadPeriodThreshold = 0.8
 	TimeFormat              = "2006-01-02 15:04:05"
 	TimeFormatZ             = TimeFormat + " MST"
+	PikeDurationMax         = time.Minute
 )
 
 type SourceTask struct {

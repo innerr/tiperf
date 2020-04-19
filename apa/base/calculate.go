@@ -16,6 +16,8 @@ func CollectPrecisePointsBySimilarity(data sources.Sources, sources []SourceTask
 	if err != nil || len(similarities) < 2 {
 		return
 	}
+
+	// Step may be ajusted
 	step = times[1].Sub(times[0])
 
 	points = []time.Time{period.Start}
@@ -27,32 +29,44 @@ func CollectPrecisePointsBySimilarity(data sources.Sources, sources []SourceTask
 			continue
 		}
 
-		// TODO: Could be improved here, it may fall into a locally optimal point
-		if i+1 < len(similarities) && similarities[i+1] < similarity {
-			con.Debug("## similarity falling to next ", similarity, similarities[i+1], "\n")
-			continue
+		// Double the range to make sure nothing missed
+		zoomInStart := times[i-1].Add(-step)
+		zoomInEnd := times[i].Add(step * 2)
+
+		const minStep = time.Minute
+		zoomInStep := step / time.Duration(zoomInSpeed)
+		if zoomInStep < minStep {
+			zoomInStep = minStep
 		}
 
-		//con.Debug("## before zoom in ", times[i-1].Format(TimeFormat), " => ", times[i].Add(step).Format(TimeFormat),
-		//	", step ", step, ", similarity", similarity, "\n")
-
-		preciseTime, zoomedStep, zoomedSimilarity, zoomed, err := ZoomInBySimilarity(data, sources,
-			times[i-1].Add(-step), times[i].Add(step*2), zoomInSpeed, step/time.Duration(zoomInSpeed), time.Minute, 0, con)
-		if err != nil {
-			return nil, nil, err
+		var zoomedSimilarities []float64
+		var zoomedTimes []time.Time
+		var zoomedStep time.Duration
+		var zoomed bool
+		if zoomInStep != step {
+			con.Debug("## before zoom-in ", zoomInStart.Format(TimeFormat), " => ", zoomInEnd.Format(TimeFormat),
+				", parent-step ", step, ", parent-similarity ", similarity, "\n")
+			zoomedSimilarities, zoomedTimes, zoomedStep, zoomed, err = ZoomInBySimilarity(data, sources,
+				zoomInStart, zoomInEnd, similarityThreshold, zoomInSpeed, zoomInStep, time.Minute, 0, con)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 
 		if zoomed {
-			reasons = append(reasons, SimilarityBreakingReason{
-				"workload",
-				preciseTime.Add(-zoomedStep),
-				preciseTime,
-				zoomedStep,
-				zoomedSimilarity,
-			})
-			//con.Debug("## after  zoom in ", preciseTime.Add(-zoomedStep).Format(TimeFormat), " => ",
-			//	preciseTime.Add(zoomedStep).Format(TimeFormat), ", step ", zoomedStep, ", similarity", zoomedSimilarity, "\n")
-			points = append(points, preciseTime)
+			for i, preciseTime := range zoomedTimes {
+				zoomedPrevStart := preciseTime.Add(-zoomedStep)
+				reasons = append(reasons, SimilarityBreakingReason{
+					"workload",
+					zoomedPrevStart,
+					preciseTime,
+					zoomedStep,
+					zoomedSimilarities[i],
+				})
+				points = append(points, preciseTime)
+				con.Debug("## after zoom-in ", zoomedPrevStart.Format(TimeFormat), " => ",
+					preciseTime.Add(zoomedStep).Format(TimeFormat), ", step ", zoomedStep, ", similarity", zoomedSimilarities[i], "\n")
+			}
 		} else {
 			reasons = append(reasons, SimilarityBreakingReason{
 				"workload",
@@ -67,52 +81,95 @@ func CollectPrecisePointsBySimilarity(data sources.Sources, sources []SourceTask
 
 	points = append(points, period.End)
 	reasons = append(reasons, period.EndReason)
+
+	// Remove duplicated points and out of range points
+	points, rawPoints := []time.Time{}, points
+	reasons, rawReasons := []interface{}{}, reasons
+	var prev time.Time
+	for i, point := range rawPoints {
+		if point.Before(period.Start) || point.After(period.End) {
+			continue
+		}
+		if prev.IsZero() {
+			points = append(points, rawPoints[i])
+			reasons = append(reasons, rawReasons[i])
+			prev = rawPoints[i]
+		} else {
+			if rawPoints[i].Sub(prev) > PikeDurationMax {
+				points = append(points, rawPoints[i])
+				reasons = append(reasons, rawReasons[i])
+				prev = rawPoints[i]
+			}
+		}
+	}
+
 	return
 }
 
-func ZoomInBySimilarity(data sources.Sources, sources []SourceTask, start time.Time,
-	end time.Time, speed int, step time.Duration, minStep time.Duration, level int, con Console) (preciseTime time.Time,
-	zoomedStep time.Duration, zoomedSimilarity float64, zoomed bool, err error) {
+func ZoomInBySimilarity(data sources.Sources, sources []SourceTask, start time.Time, end time.Time, similarityThreshold float64,
+	speed int, step time.Duration, minStep time.Duration, level int, con Console) (zoomedSimilarities []float64,
+	zoomedTimes []time.Time, zoomedStep time.Duration, zoomed bool, err error) {
 
 	zoomed = false
 	if step < minStep {
 		return
 	}
-	similarities, times, err := CollectSimilarities(data, sources, start, end, step)
+	rawSimilarities, rawTimes, err := CollectSimilarities(data, sources, start, end, step)
 	if err != nil {
 		return
 	}
-	if len(similarities) < 3 {
+
+	// Scale too little, not a succeeded zooming
+	if len(rawTimes) < 3 {
 		return
 	}
-	step = times[1].Sub(times[0])
-	//for i := 1; i < len(similarities); i++ {
-	//	con.Debug("## level ", level, " #", i, " zooming in ", times[i-1].Format(TimeFormat), " => ",
-	//		times[i].Add(step).Format(TimeFormat), ", step ", step, ", similarity", similarities[i], "\n")
-	//}
 
-	zoomedSimilarity = similarities[0]
-	zoomedIndex := -1
-	for i := 1; i < len(similarities); i++ {
-		if similarities[i] < zoomedSimilarity {
-			zoomedSimilarity = similarities[i]
-			zoomedIndex = i
+	// Step may be ajusted
+	step = rawTimes[1].Sub(rawTimes[0])
+
+	similarities := []float64{}
+	times := []time.Time{}
+	for i, time := range rawTimes {
+		con.Debug("## level ", level, " #", i, " zooming-in ", time.Add(-step).Format(TimeFormat), " => ",
+			time.Add(step).Format(TimeFormat), ", step ", step, ", similarity ", rawSimilarities[i], "\n")
+		if time.Before(start) || time.After(end) {
+			continue
+		}
+		if rawSimilarities[i] >= similarityThreshold {
+			continue
+		}
+		similarities = append(similarities, rawSimilarities[i])
+		times = append(times, time)
+	}
+
+	// Found nothing
+	if len(times) == 0 {
+		return
+	}
+
+	// Looping zoom-in for more precise points
+	for i, it := range times {
+		rezoomedSimilarities, rezoomedTimes, rezoomedStep, rezoomed, rezoomErr := ZoomInBySimilarity(
+			data, sources, it.Add(-2*zoomedStep), it.Add(2*zoomedStep), similarityThreshold, speed,
+			step/time.Duration(speed), minStep, level+1, con)
+		if rezoomErr != nil {
+			err = rezoomErr
+			return
+		}
+		if rezoomed {
+			for j, similarity := range rezoomedSimilarities {
+				zoomedSimilarities = append(zoomedSimilarities, similarity)
+				zoomedTimes = append(zoomedTimes, rezoomedTimes[j])
+			}
+			// TODO: this is not all right, not all points are succeedly re-zoom-in
+			zoomedStep = rezoomedStep
+		} else {
+			zoomedSimilarities = append(zoomedSimilarities, similarities[i])
+			zoomedTimes = append(zoomedTimes, it)
 		}
 	}
-	preciseTime = times[zoomedIndex]
-	zoomedStep = times[1].Sub(times[0])
+
 	zoomed = true
-
-	rezoomedTime, rezoomedStep, rezoomedSimilarity, rezoomed, err := ZoomInBySimilarity(data, sources,
-		preciseTime.Add(-zoomedStep*2), preciseTime.Add(zoomedStep*2), speed, zoomedStep/time.Duration(speed), minStep, level+1, con)
-	if err != nil {
-		return
-	}
-	if !rezoomed {
-		return
-	}
-
-	preciseTime, zoomedStep, zoomedSimilarity = rezoomedTime, rezoomedStep, rezoomedSimilarity
 	return
 }
 
