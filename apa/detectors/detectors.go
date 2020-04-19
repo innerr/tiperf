@@ -44,17 +44,22 @@ func (d *Detectors) RegisterCombined(name string, help string, names []string) {
 	d.combineds[name] = names
 }
 
+// It's easier using z-index than using DAG to solve dependency,
+//   since all detectors are statically configured
 func (d *Detectors) RegisterAll() {
 	d.Register("trend", "detect performance trend", DetectTrend, 0)
-	d.Register("balance", "detect anything imbalance", DetectBalance, 1)
-	d.Register("pikes", "detect performance pikes", DetectPikes, 10)
-	d.Register("alive", "detect service up and down events", DetectAlive, 11)
+	d.Register("balance", "detect anything imbalance", DetectBalance, 10)
+
+	d.Register("pikes", "detect performance pikes", DetectPikes, 100)
+	d.Register("alive", "detect service up and down events", DetectAlive, 101)
+	d.Register("jitter", "detect performance jitter", DetectJitter, 102)
 
 	d.RegisterCombined("all", "detect all", []string{
 		"balance",
 		"trend",
 		"pikes",
 		"alive",
+		"jitter",
 	})
 }
 
@@ -82,45 +87,54 @@ func (d *Detectors) HelpStrings() []string {
 	return helps
 }
 
-func (d *Detectors) ParseWorkloadFromArgs(args []string) error {
+func (d *Detectors) ParseWorkloadFromArgs(args []string) (err error) {
 	for _, arg := range args {
-		if len(arg) == 0 {
-			continue
+		err = d.ParseWorkloadFromArg(arg)
+		if err != nil {
+			return
 		}
+	}
+	return
+}
 
-		if arg[0] == '~' {
-			name := arg[1:]
-			names, ok := d.combineds[name]
-			if ok {
-				for _, it := range names {
-					delete(d.workload, it)
-				}
-			} else {
-				delete(d.workload, name)
-			}
-			continue
-		}
+func (d *Detectors) ParseWorkloadFromArg(arg string) (err error) {
+	if len(arg) == 0 {
+		return
+	}
 
-		name := arg
-		function, ok := d.functions[name]
-		if ok {
-			d.workload[name] = function
-			continue
-		}
+	if arg[0] == '~' {
+		name := arg[1:]
 		names, ok := d.combineds[name]
 		if ok {
 			for _, it := range names {
-				function, ok := d.functions[it]
-				if !ok {
-					return fmt.Errorf("unknown name: " + it + " in combination: " + name)
-				}
-				d.workload[it] = function
+				delete(d.workload, it)
 			}
-			continue
+		} else {
+			delete(d.workload, name)
 		}
+		return
+	}
+
+	name := arg
+	function, ok := d.functions[name]
+	if ok {
+		d.workload[name] = function
+		return
+	}
+
+	names, ok := d.combineds[name]
+	if !ok {
 		return fmt.Errorf("unknown name: " + name)
 	}
-	return nil
+
+	for _, it := range names {
+		function, ok := d.functions[it]
+		if !ok {
+			return fmt.Errorf("unknown name: " + it + " in combination: " + name)
+		}
+		d.workload[it] = function
+	}
+	return
 }
 
 func (d *Detectors) GetWorkload() (workload []string) {
@@ -130,7 +144,7 @@ func (d *Detectors) GetWorkload() (workload []string) {
 	return
 }
 
-func (d *Detectors) RunWorkload(sources sources.Sources, period base.Period) (events Events, err error) {
+func (d *Detectors) RunWorkload(sources sources.Sources, period base.Period, con base.Console) (events Events, err error) {
 	funcs := make(DetectorFuncs, len(d.workload))
 	i := 0
 	for _, v := range d.workload {
@@ -142,7 +156,7 @@ func (d *Detectors) RunWorkload(sources sources.Sources, period base.Period) (ev
 	found := FoundEvents{}
 	var es Events
 	for _, function := range funcs {
-		es, err = function.Func(sources, period, found)
+		es, err = function.Func(sources, period, found, con)
 		if err != nil {
 			return
 		}
@@ -154,8 +168,6 @@ func (d *Detectors) RunWorkload(sources sources.Sources, period base.Period) (ev
 	return
 }
 
-// It's easier using z-index than using DAG to solve dependency,
-//   since all detectors are statically configured
 type DetectorFunc struct {
 	Name   string
 	ZIndex int

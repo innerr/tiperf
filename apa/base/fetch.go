@@ -16,9 +16,6 @@ func GetVectors(source sources.Source, query string,
 	if step == 0 {
 		res, err = source.PreciseQuery(query, start, end)
 	} else {
-		if step < time.Minute {
-			step = time.Minute
-		}
 		res, err = source.Query(query, start, end, step)
 	}
 	if err != nil {
@@ -59,15 +56,4 @@ func CollectSources(
 		}
 	}
 	return
-}
-
-// TODO: have risk that could be too many data and fail, need to split into many queries
-func ChooseStep(duration time.Duration) time.Duration {
-	if duration >= 30*24*time.Hour {
-		return 15 * time.Minute
-	}
-	if duration >= 7*24*time.Hour {
-		return 5 * time.Minute
-	}
-	return time.Minute
 }

@@ -6,6 +6,6 @@ import (
 )
 
 // TODO: impl
-func DetectTrend(data sources.Sources, period base.Period, found FoundEvents) (Events, error) {
+func DetectTrend(data sources.Sources, period base.Period, found FoundEvents, con base.Console) (Events, error) {
 	return nil, nil
 }

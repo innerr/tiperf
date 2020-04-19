@@ -6,6 +6,6 @@ import (
 )
 
 // TODO: impl
-func DetectBalance(data sources.Sources, period base.Period, found FoundEvents, con base.Console) (Events, error) {
+func DetectJitter(data sources.Sources, period base.Period, found FoundEvents, con base.Console) (Events, error) {
 	return nil, nil
 }

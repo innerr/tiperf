@@ -77,3 +77,19 @@ func GetBreakingFunc(name string) BreakingFunc {
 	}
 	panic("no function: " + name)
 }
+
+type SimilarityBreakingReason struct {
+	Name          string
+	PrevStartTime time.Time
+	CurrStartTime time.Time
+	Duration      time.Duration
+	Similarity    float64
+}
+
+func (s SimilarityBreakingReason) String() string {
+	var durDesc string
+	if s.Duration != time.Minute {
+		durDesc = " in " + fmt.Sprintf("%v", s.Duration.Truncate(time.Minute))
+	}
+	return fmt.Sprintf("%s changed%s, similarity %.2f", s.Name, durDesc, s.Similarity)
+}

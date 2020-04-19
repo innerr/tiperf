@@ -6,6 +6,6 @@ import (
 )
 
 // TODO: impl
-func DetectPikes(data sources.Sources, period base.Period, found FoundEvents) (Events, error) {
+func DetectPikes(data sources.Sources, period base.Period, found FoundEvents, con base.Console) (Events, error) {
 	return nil, nil
 }

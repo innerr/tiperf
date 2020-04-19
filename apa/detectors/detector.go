@@ -32,4 +32,4 @@ func (e Events) Less(i, j int) bool {
 
 type FoundEvents map[string]Events
 
-type Detector func(sources sources.Sources, period base.Period, found FoundEvents) (Events, error)
+type Detector func(sources sources.Sources, period base.Period, found FoundEvents, con base.Console) (Events, error)

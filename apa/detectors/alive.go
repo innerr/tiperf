@@ -25,7 +25,8 @@ func (a AliveInfo) Output(when time.Time, con base.Console, indent string) {
 	con.Detail(line, "\n")
 }
 
-func DetectAlive(data sources.Sources, period base.Period, found FoundEvents) (events Events, err error) {
+// BUG: "end timestamp must not be before start time"
+func DetectAlive(data sources.Sources, period base.Period, found FoundEvents, con base.Console) (events Events, err error) {
 	sources := base.GetPeriodAliveSource()
 	vectors, err := base.CollectSources(data, sources, period.Start, period.End, 0)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,7 @@ func NewPrometheus(address string) (p *Prometheus, err error) {
 }
 
 func (p *Prometheus) Query(query string, start time.Time, end time.Time, step time.Duration) (model.Value, error) {
+	query = strings.ReplaceAll(query, "%s", strconv.Itoa(int(step.Seconds()))+"s")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	rng := v1.Range{
