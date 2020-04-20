@@ -20,6 +20,7 @@ type Detectors struct {
 	// running status
 	runnings map[string]bool
 	found    FoundEvents
+	result   FoundEvents
 }
 
 func NewDetectors() Detectors {
@@ -32,6 +33,7 @@ func NewDetectors() Detectors {
 		make(map[string]DetectorFunc),
 		make(map[string]DetectorFunc),
 		make(map[string]bool),
+		make(FoundEvents),
 		make(FoundEvents),
 	}
 	d.RegisterAll()
@@ -159,12 +161,13 @@ func (d *Detectors) RunWorkload(sources sources.Sources, period base.Period, con
 		}
 	}
 
-	for _, it := range d.found {
+	for _, it := range d.result {
 		events = append(events, it...)
 	}
 	sort.Sort(events)
 
 	d.found = FoundEvents{}
+	d.result = FoundEvents{}
 	if len(d.runnings) != 0 {
 		panic("uncleaned running stack")
 	}
@@ -200,7 +203,12 @@ func (d *Detectors) run(name string, sources sources.Sources, period base.Period
 	}
 	sort.Sort(events)
 
-	d.found[function.Name] = events
+	d.found[name] = events
+	if _, ok := d.workload[name]; ok {
+		d.result[name] = events
+	} else {
+		con.Debug("    ## detecting function ", name, " result is hidden\n")
+	}
 	delete(d.runnings, name)
 	con.Debug("    ## detecting function ", name, " end\n")
 	return
