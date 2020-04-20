@@ -1,6 +1,7 @@
 package base
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -65,7 +66,8 @@ func CollectPrecisePointsBySimilarity(data sources.Sources, sources []SourceTask
 				})
 				points = append(points, preciseTime)
 				con.Debug("## after zoom-in ", zoomedPrevStart.Format(TimeFormat), " => ",
-					preciseTime.Add(zoomedStep).Format(TimeFormat), ", step ", zoomedStep, ", similarity", zoomedSimilarities[i], "\n")
+					preciseTime.Add(zoomedStep).Format(TimeFormat), ", step ", zoomedStep,
+					", similarity ", zoomedSimilarities[i], "\n")
 			}
 		} else {
 			reasons = append(reasons, SimilarityBreakingReason{
@@ -149,8 +151,8 @@ func ZoomInBySimilarity(data sources.Sources, sources []SourceTask, start time.T
 
 	// Looping zoom-in for more precise points
 	for i, it := range times {
-		rezoomedSimilarities, rezoomedTimes, rezoomedStep, rezoomed, rezoomErr := ZoomInBySimilarity(
-			data, sources, it.Add(-2*zoomedStep), it.Add(2*zoomedStep), similarityThreshold, speed,
+		rezoomedSimilarities, rezoomedTimes, _, rezoomed, rezoomErr := ZoomInBySimilarity(
+			data, sources, it.Add(-2*step), it.Add(2*step), similarityThreshold, speed,
 			step/time.Duration(speed), minStep, level+1, con)
 		if rezoomErr != nil {
 			err = rezoomErr
@@ -161,14 +163,14 @@ func ZoomInBySimilarity(data sources.Sources, sources []SourceTask, start time.T
 				zoomedSimilarities = append(zoomedSimilarities, similarity)
 				zoomedTimes = append(zoomedTimes, rezoomedTimes[j])
 			}
-			// TODO: this is not all right, not all points are succeedly re-zoom-in
-			zoomedStep = rezoomedStep
 		} else {
 			zoomedSimilarities = append(zoomedSimilarities, similarities[i])
 			zoomedTimes = append(zoomedTimes, it)
 		}
 	}
 
+	// TODO: the zoomedStep maybe wrong, some points may from re-zooming
+	zoomedStep = step
 	zoomed = true
 	return
 }
@@ -193,6 +195,7 @@ func CalculateSimilarities(vectors []CollectedSourceTasks) (similarities []float
 	similarities = []float64{1}
 	for i := 1; i < len(vecs); i++ {
 		similarity := CosineSimilarity(vecs[i-1], vecs[i])
+		//similarity := DistanceSimilarity(vecs[i-1], vecs[i])
 		similarities = append(similarities, similarity)
 	}
 	times = make([]time.Time, len(timestamps))
@@ -239,7 +242,8 @@ func RotateToPeriodVecs(vectors []CollectedSourceTasks) (vecs []PeriodVec, times
 				t = it.Pairs[i].Timestamp
 			} else {
 				if t != it.Pairs[i].Timestamp {
-					panic("timestamps not matched in multiply vectors from one query")
+					line := fmt.Sprintf("%s vs %s", Ms2Time(t).Format(TimeFormat), Ms2Time(it.Pairs[i].Timestamp).Format(TimeFormat))
+					panic("timestamps not matched in multiply vectors from one query: " + line)
 				}
 			}
 			vec = append(vec, float64(it.Pairs[i].Value))
@@ -278,6 +282,16 @@ func CosineSimilarity(a PeriodVec, b PeriodVec) float64 {
 		sb += math.Pow(b[i], 2)
 	}
 	return s / (math.Sqrt(sa) * math.Sqrt(sb))
+}
+
+func DistanceSimilarity(a PeriodVec, b PeriodVec) float64 {
+	var r float64
+	r = 0
+	for i := 0; i < len(a); i++ {
+		r = r + (a[i] * b[i])
+	}
+	r = math.Sqrt(r)
+	return r
 }
 
 const (

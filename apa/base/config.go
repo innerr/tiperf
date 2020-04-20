@@ -42,17 +42,5 @@ func GetPeriodWorkloadBreakingPointSource() []SourceTask {
 }
 
 func ChooseWorkloadPeriodSmoothStep(duration time.Duration) time.Duration {
-	if duration >= 30*24*time.Hour {
-		return 36 * time.Minute
-	}
-	if duration >= 20*24*time.Hour {
-		return 24 * time.Minute
-	}
-	if duration >= 10*24*time.Hour {
-		return 12 * time.Minute
-	}
-	if duration >= 5*24*time.Hour {
-		return 6 * time.Minute
-	}
-	return 4 * time.Minute
+	return 2 * time.Minute
 }

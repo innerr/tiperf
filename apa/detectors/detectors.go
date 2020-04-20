@@ -16,6 +16,10 @@ type Detectors struct {
 	combineds     map[string][]string
 	functions     map[string]DetectorFunc
 	workload      map[string]DetectorFunc
+
+	// running status
+	runnings map[string]bool
+	found    FoundEvents
 }
 
 func NewDetectors() Detectors {
@@ -27,15 +31,17 @@ func NewDetectors() Detectors {
 		make(map[string][]string),
 		make(map[string]DetectorFunc),
 		make(map[string]DetectorFunc),
+		make(map[string]bool),
+		make(FoundEvents),
 	}
 	d.RegisterAll()
 	return d
 }
 
-func (d *Detectors) Register(name string, help string, function Detector, zIndex int) {
+func (d *Detectors) Register(name string, help string, function Detector, dependencies []string) {
 	d.names = append(d.names, name)
 	d.helps = append(d.helps, help)
-	d.functions[name] = DetectorFunc{name, zIndex, function}
+	d.functions[name] = DetectorFunc{name, dependencies, function}
 }
 
 func (d *Detectors) RegisterCombined(name string, help string, names []string) {
@@ -47,12 +53,13 @@ func (d *Detectors) RegisterCombined(name string, help string, names []string) {
 // It's easier using z-index than using DAG to solve dependency,
 //   since all detectors are statically configured
 func (d *Detectors) RegisterAll() {
-	d.Register("trend", "detect performance trend", DetectTrend, 0)
-	d.Register("balance", "detect anything imbalance", DetectBalance, 10)
+	d.Register("alive", "detect service up and down events", DetectAlive, []string{})
 
-	d.Register("pikes", "detect performance pikes", DetectPikes, 100)
-	d.Register("alive", "detect service up and down events", DetectAlive, 101)
-	d.Register("jitter", "detect performance jitter", DetectJitter, 102)
+	d.Register("trend", "detect performance trend", DetectTrend, []string{"alive"})
+	d.Register("balance", "detect anything imbalance", DetectBalance, []string{"alive"})
+
+	d.Register("pikes", "detect performance pikes", DetectPikes, []string{"trend"})
+	d.Register("jitter", "detect performance jitter", DetectJitter, []string{"trend"})
 
 	d.RegisterCombined("all", "detect all", []string{
 		"balance",
@@ -124,7 +131,7 @@ func (d *Detectors) ParseWorkloadFromArg(arg string) (err error) {
 
 	names, ok := d.combineds[name]
 	if !ok {
-		return fmt.Errorf("unknown name: " + name)
+		return fmt.Errorf("parsing workload, unknown name: " + name)
 	}
 
 	for _, it := range names {
@@ -145,45 +152,64 @@ func (d *Detectors) GetWorkload() (workload []string) {
 }
 
 func (d *Detectors) RunWorkload(sources sources.Sources, period base.Period, con base.Console) (events Events, err error) {
-	funcs := make(DetectorFuncs, len(d.workload))
-	i := 0
-	for _, v := range d.workload {
-		funcs[i] = v
-		i++
-	}
-	sort.Sort(funcs)
-
-	found := FoundEvents{}
-	var es Events
-	for _, function := range funcs {
-		es, err = function.Func(sources, period, found, con)
+	for name, _ := range d.workload {
+		err = d.run(name, sources, period, con)
 		if err != nil {
 			return
 		}
-		sort.Sort(es)
-		found[function.Name] = es
-		events = append(events, es...)
+	}
+
+	for _, it := range d.found {
+		events = append(events, it...)
 	}
 	sort.Sort(events)
+
+	d.found = FoundEvents{}
+	if len(d.runnings) != 0 {
+		panic("uncleaned running stack")
+	}
+	return
+}
+
+func (d *Detectors) run(name string, sources sources.Sources, period base.Period, con base.Console) (err error) {
+	if _, ok := d.found[name]; ok {
+		return
+	}
+
+	con.Debug("    ## detecting function ", name, " start\n")
+
+	function, ok := d.functions[name]
+	if !ok {
+		return fmt.Errorf("function not found: " + name)
+	}
+	if _, ok := d.runnings[name]; ok {
+		return fmt.Errorf("circled dependency: " + name)
+	}
+	d.runnings[name] = true
+
+	for _, dependency := range function.Dependencies {
+		err = d.run(dependency, sources, period, con)
+		if err != nil {
+			return
+		}
+	}
+
+	events, err := function.Func(sources, period, d.found, con)
+	if err != nil {
+		return
+	}
+	sort.Sort(events)
+
+	d.found[function.Name] = events
+	delete(d.runnings, name)
+	con.Debug("    ## detecting function ", name, " end\n")
 	return
 }
 
 type DetectorFunc struct {
-	Name   string
-	ZIndex int
-	Func   Detector
+	Name         string
+	Dependencies []string
+	Func         Detector
 }
 
 type DetectorFuncs []DetectorFunc
-
-func (d DetectorFuncs) Len() int {
-	return len(d)
-}
-
-func (d DetectorFuncs) Swap(i, j int) {
-	d[i], d[j] = d[j], d[i]
-}
-
-func (d DetectorFuncs) Less(i, j int) bool {
-	return d[i].ZIndex < d[j].ZIndex
-}
