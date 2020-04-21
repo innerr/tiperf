@@ -148,8 +148,13 @@ func (a *AutoPerfAssistant) DoDectect(detector detectors.Detectors) (err error) 
 		a.con.Detail("[", period.Start.Format(base.TimeFormat), " => ", period.End.Format(base.TimeFormat), "]", "\n")
 		whyStart := fmt.Sprintf("%v", period.StartReason)
 		if whyStart != "start" {
-			a.con.Detail("    ** started by ", whyStart, "\n")
+			whyStartReason := period.StartReason.(base.WorkloadBreakingReason)
+			a.con.Debug("    ## ", whyStartReason.Similarity, "\n")
+			a.con.Debug("    ## prev workload ", whyStartReason.PrevWorkload.RawString(), "\n")
+			a.con.Debug("    ## curr workload ", whyStartReason.CurrWorkload.RawString(), "\n")
+			a.con.Detail("    ** started ", whyStartReason.CurrWorkload, " (from ", whyStartReason.PrevWorkload, ")\n")
 		}
+
 		var events detectors.Events
 		events, err = detector.RunWorkload(a.data, period, a.con)
 		if err != nil {
@@ -158,13 +163,17 @@ func (a *AutoPerfAssistant) DoDectect(detector detectors.Detectors) (err error) 
 		for _, event := range events {
 			event.What.Output(event.When, a.con, "    ")
 		}
+
 		whyEnd := fmt.Sprintf("%v", period.EndReason)
+		lasted := period.End.Sub(period.Start).Truncate(time.Minute)
 		if whyEnd != "end" {
-			whyEnd = ", ended by " + whyEnd
-		} else {
-			whyEnd = ""
+			whyEndReason := period.EndReason.(base.WorkloadBreakingReason)
+			a.con.Debug("    ## ", whyEndReason.Similarity, "\n")
+			a.con.Debug("    ## curr workload ", whyEndReason.PrevWorkload.RawString(), "\n")
+			a.con.Debug("    ## next workload ", whyEndReason.CurrWorkload.RawString(), "\n")
+			a.con.Detail("    ** went to ", whyEndReason.CurrWorkload, "\n")
 		}
-		a.con.Detail("    ** lasted ", period.End.Sub(period.Start).Truncate(time.Minute), whyEnd, "\n")
+		a.con.Detail("    ** lasted ", lasted, "\n")
 	}
 	return
 }

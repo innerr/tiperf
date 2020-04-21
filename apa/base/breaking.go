@@ -91,5 +91,5 @@ func (s SimilarityBreakingReason) String() string {
 	if s.Duration != time.Minute {
 		durDesc = " in " + fmt.Sprintf("%v", s.Duration.Truncate(time.Minute))
 	}
-	return fmt.Sprintf("%s changed%s, similarity %.2f", s.Name, durDesc, s.Similarity)
+	return fmt.Sprintf("%s changed%s, similarity %f", s.Name, durDesc, s.Similarity)
 }

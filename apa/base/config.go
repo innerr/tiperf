@@ -9,10 +9,13 @@ import (
 const (
 	AutoModeMaxDuration     = 30 * 24 * time.Hour
 	AutoModeStartDuration   = time.Hour
-	WorkloadPeriodThreshold = 0.8
+	WorkloadPeriodThreshold = 0.6
 	TimeFormat              = "2006-01-02 15:04:05"
 	TimeFormatZ             = TimeFormat + " MST"
 	PikeDurationMax         = time.Minute
+	QpsThresholdActive      = 2.0
+	QpsThresholdAlot        = 500.0
+	QpsThresholdHeavy       = 2000.0
 )
 
 type SourceTask struct {

@@ -8,24 +8,6 @@ import (
 	"github.com/innerr/tiperf/apa/sources"
 )
 
-type AliveInfo struct {
-	Instance string
-	Type     string
-	IsUpping bool
-}
-
-func (a AliveInfo) Output(when time.Time, con base.Console, indent string) {
-	var action string
-	if a.IsUpping {
-		action = "up"
-	} else {
-		action = "down"
-	}
-	line := fmt.Sprintf("%s%s [%v] -> %s %s", indent, when.Format(base.TimeFormat), a.Type, action, a.Instance)
-	con.Detail(line, "\n")
-}
-
-// BUG: "end timestamp must not be before start time"
 func DetectAlive(data sources.Sources, period base.Period, found FoundEvents, con base.Console) (events Events, err error) {
 	sources := base.GetPeriodAliveSource()
 	vectors, err := base.CollectSources(data, sources, period.Start, period.End, 0)
@@ -44,4 +26,21 @@ func DetectAlive(data sources.Sources, period base.Period, found FoundEvents, co
 		}
 	}
 	return
+}
+
+type AliveInfo struct {
+	Instance string
+	Type     string
+	IsUpping bool
+}
+
+func (a AliveInfo) Output(when time.Time, con base.Console, indent string) {
+	var action string
+	if a.IsUpping {
+		action = "up"
+	} else {
+		action = "down"
+	}
+	line := fmt.Sprintf("%s%s [%v] -> %s %s", indent, when.Format(base.TimeFormat), a.Type, action, a.Instance)
+	con.Detail(line, "\n")
 }

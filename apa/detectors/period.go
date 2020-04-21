@@ -7,9 +7,7 @@ import (
 	"github.com/innerr/tiperf/apa/sources"
 )
 
-func DetectWorkloadPeriods(data sources.Sources, period base.Period,
-	con base.Console) (periods []base.Period, err error) {
-
+func DetectWorkloadPeriods(data sources.Sources, period base.Period, con base.Console) (periods []base.Period, err error) {
 	// Calculating: smoothen -> locate rough positions -> zoom in to get precise points
 
 	duration := period.End.Sub(period.Start)
