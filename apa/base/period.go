@@ -276,14 +276,17 @@ func (w WorkloadDesc) String() string {
 		return level
 	}
 
-	tp := "read and write"
+	writeTp := "write"
+	if w.AvgQpsPessimisticLock > QpsThresholdActive && (w.AvgQpsCommit+w.AvgQpsPrewrite) > QpsThresholdActive &&
+		w.AvgQpsPessimisticLock/(w.AvgQpsCommit+w.AvgQpsPrewrite) > 0.1 {
+		writeTp = "pessimistic write"
+	}
+
+	tp := "read and " + writeTp
 	if write == 0 || read/write > 20 {
 		tp = "read"
 	} else if read == 0 || write/read > 20 {
-		tp = "write"
-		if w.AvgQpsPessimisticLock > QpsThresholdActive && w.AvgQpsPessimisticLock/(w.AvgQpsCommit+w.AvgQpsPrewrite) > 0.1 {
-			tp = "pessimistic write"
-		}
+		tp = writeTp
 	}
 
 	return level + " " + tp

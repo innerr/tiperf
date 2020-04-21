@@ -152,7 +152,7 @@ func (a *AutoPerfAssistant) DoDectect(detector detectors.Detectors) (err error) 
 			a.con.Debug("    ## ", whyStartReason.Similarity, "\n")
 			a.con.Debug("    ## prev workload ", whyStartReason.PrevWorkload.RawString(), "\n")
 			a.con.Debug("    ## curr workload ", whyStartReason.CurrWorkload.RawString(), "\n")
-			a.con.Detail("    ** started ", whyStartReason.CurrWorkload, " (from ", whyStartReason.PrevWorkload, ")\n")
+			a.con.Detail("    ** ", whyStartReason.CurrWorkload, "\n")
 		}
 
 		var events detectors.Events
@@ -171,7 +171,6 @@ func (a *AutoPerfAssistant) DoDectect(detector detectors.Detectors) (err error) 
 			a.con.Debug("    ## ", whyEndReason.Similarity, "\n")
 			a.con.Debug("    ## curr workload ", whyEndReason.PrevWorkload.RawString(), "\n")
 			a.con.Debug("    ## next workload ", whyEndReason.CurrWorkload.RawString(), "\n")
-			a.con.Detail("    ** went to ", whyEndReason.CurrWorkload, "\n")
 		}
 		a.con.Detail("    ** lasted ", lasted, "\n")
 	}
