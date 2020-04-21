@@ -269,7 +269,7 @@ func (w WorkloadDesc) String() string {
 	if total >= QpsThresholdHeavy {
 		level = "heavy"
 	} else if total >= QpsThresholdAlot {
-		level = "lots of"
+		level = "medium"
 	} else if total >= QpsThresholdActive {
 		level = "slight"
 	} else {
